@@ -286,6 +286,9 @@ class Robot():
             robot_config['default_robot'] = {'sensor': ['qpos', 'qvel', 'act'], 'actuator': 'actuator'}
             return robot_config
 
+        if '/home/exx/Projects/' in config_path: # TO-DO: Figure out why line 180 in obs_wrappers.py changes things
+            config_path ='/iris/u/oliviayl/repos/affordance-learning/vip/evaluation/mj_envs/mj_envs/envs/relay_kitchen/assets/franka_kitchen.config'
+
         prompt("Reading robot-configurations from %s" % config_path)
         with open(config_path, 'r') as f:
             robot_config = eval(f.read())

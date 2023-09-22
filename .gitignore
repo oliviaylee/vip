@@ -3,3 +3,6 @@ outputs/
 *.egg-info
 __pycache__/
 .nfs*
+*dataset/
+*mjrl/
+*mujoco-py/

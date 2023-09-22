@@ -1,5 +1,5 @@
 # Hard-coded paths for goal images; these files should be generated according to README.md.
-DATASET_ABS_PATH = 'change me to your dataset absolute path'
+DATASET_ABS_PATH = '/iris/u/oliviayl/repos/affordance-learning/vip/evaluation/dataset'
 DEMO_PATHS = {
     "kitchen_micro_open-v3": f"{DATASET_ABS_PATH}/kitchen_micro_open-v3/0",
     "kitchen_micro_close-v3": f"{DATASET_ABS_PATH}/kitchen_micro_close-v3/0",

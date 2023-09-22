@@ -80,9 +80,10 @@ def configure_jobs(job_data):
             distance = np.linalg.norm(agent.sol_embedding[-1][camera]-goal_embedding)
             distances[camera].append(distance)
 
-        for _ in tqdm(range(job_data['H_total'])):
+        for i in tqdm(range(job_data['H_total'])):
             # take one-step with trajectory optimization
-            agent.train_step(job_data['num_iter'])
+            print('step')
+            agent.train_step(job_data['num_iter'], i)
             step_info = agent.sol_info[-1]
             step_log = {'t':step_info['obs_dict']['t'],
             'rwd_sparse': step_info['rwd_sparse'],

@@ -25,13 +25,15 @@ from trajopt.algos.mppi import MPPI
 def configure_jobs(job_data):
 
     # Replace OUT_DIR with your absolute path!
-    OUT_DIR = f"/home/exx/Projects/vip/evaluation/dataset/{job_data['env']}"
+    OUT_DIR = f"/iris/u/oliviayl/repos/affordance-learning/vip/evaluation/dataset/{job_data['env']}" # f"/home/exx/Projects/vip/evaluation/dataset/{job_data['env']}"
     os.makedirs(OUT_DIR, exist_ok=True)
 
     if 'env_hyper_params' in job_data.keys():
         job_data.env = register_env_variant(job_data.env, job_data.env_hyper_params)
     
     env_kwargs = job_data['env_kwargs']
+    env_kwargs['embedding_reward'] = False
+    env_kwargs['load_path'] = "vip"
     env = env_constructor(**env_kwargs)
     mean = np.zeros(env.action_dim)
     sigma = 1.0*np.ones(env.action_dim)

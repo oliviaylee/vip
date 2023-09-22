@@ -37,8 +37,13 @@ def get_sim(model_path:str=None, model_xmlstr=None):
     if model_path:
         if model_path.startswith("/"):
             fullpath = model_path
+            if '/home/exx/Projects/' in model_path: # TO-DO: Figure out why line 180 in obs_wrappers.py changes things
+                fullpath ='/iris/u/oliviayl/repos/affordance-learning/vip/evaluation/mj_envs/mj_envs/envs/relay_kitchen/assets/franka_kitchen.xml'
         else:
             fullpath = os.path.join(os.path.dirname(__file__), "assets", model_path)
+        # print('model path', model_path)
+        # print('full path', fullpath)
+        # input()
         if not path.exists(fullpath):
             raise IOError("File %s does not exist" % fullpath)
         model = load_model_from_path(fullpath)

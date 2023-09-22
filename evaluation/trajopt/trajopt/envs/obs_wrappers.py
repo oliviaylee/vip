@@ -64,14 +64,15 @@ def env_constructor(env_name, device='cuda', image_width=256, image_height=256,
     else:
         env = gym.make(env_name)
         ## Wrap in pixel observation wrapper
-        env = MuJoCoPixelObs(env, width=image_width, height=image_height, 
-                           camera_name=camera_name, device_id=render_gpu_id)
+        # env = MuJoCoPixelObs(env, width=image_width, height=image_height, 
+        #                    camera_name=camera_name, device_id=render_gpu_id)
+        env = CustomEmbedding(env, device='cuda', demo_path="/iris/u/oliviayl/repos/affordance-learning/d5rl/datasets/standard_kitchen/kitchen_demos_multitask_lexa_view_and_wrist_npz/kitchen_demos_multitask_npz/friday_kettle_bottomknob_switch_slide/20230528T010656-1be74c034d6940f1a2d9e63d24fc7f83-218.npz")
         ## Wrapper which encodes state in pretrained model (additionally compute reward)
-        env = StateEmbedding(env, embedding_name=embedding_name, device=device, load_path=load_path, 
-                        proprio=proprio, camera_name=camera_name,
-                         env_name=env_name, pixel_based=pixel_based, 
-                         embedding_reward=embedding_reward,
-                          goal_timestep=goal_timestep, init_timestep=init_timestep)
+        # env = StateEmbedding(env, embedding_name=embedding_name, device=device, load_path=load_path, 
+        #                 proprio=proprio, camera_name=camera_name,
+        #                  env_name=env_name, pixel_based=pixel_based, 
+        #                  embedding_reward=embedding_reward,
+        #                   goal_timestep=goal_timestep, init_timestep=init_timestep)
         env = GymEnv(env)
     return env
 
@@ -83,6 +84,62 @@ class ClipEnc(nn.Module):
         e = self.m.encode_image(im)
         return e
 
+
+class CustomEmbedding(gym.ObservationWrapper):
+    """
+    This wrapper places a convolution model over the observation.
+
+    From https://pytorch.org/vision/stable/models.html
+    All pre-trained models expect input images normalized in the same way,
+    i.e. mini-batches of 3-channel RGB images of shape (3 x H x W),
+    where H and W are expected to be at least 224.
+
+    Args:
+        env (Gym environment): the original environment,
+        embedding_name (str, 'baseline'): the name of the convolution model,
+        device (str, 'cuda'): where to allocate the model.
+
+    """
+    def __init__(self, env, device='cuda', demo_path="/iris/u/oliviayl/repos/affordance-learning/d5rl/datasets/standard_kitchen/kitchen_demos_multitask_lexa_view_and_wrist_npz/kitchen_demos_multitask_npz/friday_kettle_bottomknob_switch_slide/20230528T010656-1be74c034d6940f1a2d9e63d24fc7f83-218.npz"):
+        gym.ObservationWrapper.__init__(self, env)
+
+        # Load demo, extract end effector positions / proprio data
+        self.data = np.load(demo_path)
+        self.metadata = self.data.files
+        self.proprio = self.data["proprio"][:, :3]
+        self.traj_len = len(self.data["proprio"])
+        self.init_state = self.data["init_qpos"] # CHECK: is self.init_state init_qpos?
+
+        # TO-DO? Clip traj to most meaningful interaction? Demo has traj length 218
+
+        if device == 'cuda' and torch.cuda.is_available():
+            device = torch.device('cuda')
+        else:
+            device = torch.device('cpu')
+        self.device = device
+
+    def get_obs(self):
+        return self.env.unwrapped.get_obs()
+    
+    def step(self, action, step_num):
+        state, reward, done, info = self.env.step(action)
+        # Uncomment after testing base version
+        # CHECK: What if step_num > trajectory len
+        # groundtruth_obs = self.proprio[step_num]
+        # reward = -np.linalg.norm(observation, groundtruth_obs)
+        # Robosuite: r_reach = (1 - np.tanh(10.0 * min(dists))) * reach_mult
+        return state, reward, done, info
+    
+    def reset(self):
+        observation = self.env.reset()
+        try:
+            if self.init_state is not None:
+                self.env.set_env_state(self.init_state) # BUG HERE
+        except Exception as e:
+            print("Resetting Initial State Error")
+            print("Unexpected error:", sys.exc_info()[0])
+            print(e) 
+        return observation
 
 class StateEmbedding(gym.ObservationWrapper):
     """
@@ -100,8 +157,7 @@ class StateEmbedding(gym.ObservationWrapper):
 
     """
     def __init__(self, env, embedding_name=None, device='cuda', load_path="", checkpoint="",
-    proprio=0,
-     camera_name=None, env_name=None, pixel_based=True, embedding_reward=False,
+    proprio=0,camera_name=None, env_name=None, pixel_based=True, embedding_reward=False,
       goal_timestep=49, init_timestep=0):
         gym.ObservationWrapper.__init__(self, env)
 

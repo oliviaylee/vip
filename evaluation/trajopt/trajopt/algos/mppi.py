@@ -66,12 +66,12 @@ class MPPI(Trajectory):
         act_sequence = np.sum(weighted_seq.T, axis=0)/(np.sum(S) + 1e-6)
         self.act_sequence = act_sequence
 
-    def advance_time(self, act_sequence=None):
+    def advance_time(self, step_num, act_sequence=None):
         act_sequence = self.act_sequence if act_sequence is None else act_sequence
         # accept first action and step
         action = act_sequence[0].copy()
         self.env.real_env_step(True)
-        s, r, _, info = self.env.step(action)
+        s, r, _, info = self.env.step(action, step_num)
 
         self.sol_act.append(action)
         self.sol_state.append(self.env.get_env_state().copy())
@@ -111,9 +111,9 @@ class MPPI(Trajectory):
                                       )
         return paths
 
-    def train_step(self, niter=1):
+    def train_step(self, step_num, niter=1):
         t = len(self.sol_state) - 1
         for _ in range(niter):
             paths = self.do_rollouts(self.seed+t)
             self.update(paths)
-        self.advance_time()
+        self.advance_time(step_num)
