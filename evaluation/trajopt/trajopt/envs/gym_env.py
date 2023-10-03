@@ -50,10 +50,10 @@ class GymEnv(object):
         except AttributeError:
             self._action_dim = self.env.unwrapped.action_dim
 
-        try:
-            self._observation_dim = self.env.observation_space.shape[0]
-        except AttributeError:
-            self._observation_dim = self.env.unwrapped.obs_dim
+        # try:
+        #     self._observation_dim = self.env.observation_space.shape[0]
+        # except AttributeError:
+        self._observation_dim = self.env.unwrapped.obs_dim
 
         # Specs
         self.spec = EnvSpec(self._observation_dim, self._action_dim, self._horizon)
@@ -102,9 +102,10 @@ class GymEnv(object):
             cum_reward = 0.0
             for i in range(self.act_repeat):
                 obs, reward, done, ifo = self.env.step(action)
+                obs = self.get_obs()
                 cum_reward += reward
                 if done: break
-        return self.obs_mask * obs, cum_reward, done, ifo
+        return obs, cum_reward, done, ifo
 
     def render(self):
         try:

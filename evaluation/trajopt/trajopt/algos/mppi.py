@@ -52,8 +52,8 @@ class MPPI(Trajectory):
         self.act_sequence = np.ones((self.H, self.m)) * self.mean
         self.init_act_sequence = self.act_sequence.copy()
 
-        if env_kwargs['embedding_reward']:
-            self.sol_embedding.append(self.env.env.get_views(embedding=True))
+        # if env_kwargs['embedding_reward']:
+        #     self.sol_embedding.append(self.env.env.get_views(embedding=True))
 
     def update(self, paths):
         num_traj = len(paths)
@@ -66,12 +66,12 @@ class MPPI(Trajectory):
         act_sequence = np.sum(weighted_seq.T, axis=0)/(np.sum(S) + 1e-6)
         self.act_sequence = act_sequence
 
-    def advance_time(self, step_num, act_sequence=None):
+    def advance_time(self, act_sequence=None):
         act_sequence = self.act_sequence if act_sequence is None else act_sequence
         # accept first action and step
         action = act_sequence[0].copy()
         self.env.real_env_step(True)
-        s, r, _, info = self.env.step(action, step_num)
+        s, r, _, info = self.env.step(action)
 
         self.sol_act.append(action)
         self.sol_state.append(self.env.get_env_state().copy())
@@ -79,8 +79,8 @@ class MPPI(Trajectory):
         self.sol_reward.append(r)
         self.sol_info.append(info)
 
-        if 'obs_embedding' in info:
-            self.sol_embedding.append(self.env.env.get_views(embedding=True))    
+        # if 'obs_embedding' in info:
+        #     self.sol_embedding.append(self.env.env.get_views(embedding=True))    
         
         # get updated action sequence
         if self.warmstart:
@@ -111,9 +111,9 @@ class MPPI(Trajectory):
                                       )
         return paths
 
-    def train_step(self, step_num, niter=1):
+    def train_step(self, niter=1):
         t = len(self.sol_state) - 1
         for _ in range(niter):
             paths = self.do_rollouts(self.seed+t)
             self.update(paths)
-        self.advance_time(step_num)
+        self.advance_time()

@@ -73,56 +73,69 @@ def configure_jobs(job_data):
                     env_kwargs=env_kwargs)
 
         # trajectory optimization
-        distances = {}
-        for camera in agent.env.env.cameras:
-            distances[camera] = []
-            goal_embedding = agent.env.env.goal_embedding[camera]
-            distance = np.linalg.norm(agent.sol_embedding[-1][camera]-goal_embedding)
-            distances[camera].append(distance)
+        # distances = {}
+        # for camera in agent.env.env.cameras:
+        #     distances[camera] = []
+        #     goal_embedding = agent.env.env.goal_embedding[camera]
+        #     distance = np.linalg.norm(agent.sol_embedding[-1][camera]-goal_embedding)
+        #     distances[camera].append(distance)
 
         for i in tqdm(range(job_data['H_total'])):
             # take one-step with trajectory optimization
             print('step')
-            agent.train_step(job_data['num_iter'], i)
+            agent.train_step(job_data['num_iter'])
+            print('train step')
             step_info = agent.sol_info[-1]
+            # print(step_info['obs_dict'].keys())
             step_log = {'t':step_info['obs_dict']['t'],
             'rwd_sparse': step_info['rwd_sparse'],
             'rwd_dense': step_info['rwd_dense'],
-            'solved': step_info['solved'] * 1.0, 
-            'ee_error':step_info['obs_dict']['ee_error'],
-            'robot_error':step_info['obs_dict']['robot_error'],
-            'objs_error':step_info['obs_dict']['objs_error']}
+            'solved': step_info['solved'] * 1.0}
+            # 'ee_error':step_info['obs_dict']['ee_error'],
+            # 'robot_error':step_info['obs_dict']['robot_error'],
+            # 'objs_error':step_info['obs_dict']['objs_error']}
             
             # Save embedding distance curve
-            fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(18,6))
-            for camera_id, camera in enumerate(agent.env.env.cameras):
-                goal_embedding = agent.env.env.goal_embedding[camera]
-                goal_distance = np.linalg.norm(agent.sol_embedding[-1][camera]-goal_embedding)
-                distances[camera].append(goal_distance)
-                ax[camera_id].plot(np.arange(len(distances[camera])), distances[camera])
-                ax[camera_id].set_title(camera)
-                step_log[camera] = goal_distance
+            # fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(18,6))
+            # for camera_id, camera in enumerate(agent.env.env.cameras):
+            #     goal_embedding = agent.env.env.goal_embedding[camera]
+            #     goal_distance = np.linalg.norm(agent.sol_embedding[-1][camera]-goal_embedding)
+            #     distances[camera].append(goal_distance)
+            #     ax[camera_id].plot(np.arange(len(distances[camera])), distances[camera])
+            #     ax[camera_id].set_title(camera)
+            #     step_log[camera] = goal_distance
             
-            for key in step_log:
-                agent.logger.log_kv(key, step_log[key])
+            # for key in step_log:
+            #     agent.logger.log_kv(key, step_log[key])
 
-            agent.logger.save_log(f'./{i}/logs')
-            plt.suptitle(f"{job_data.env} Video MPPI {job_data.embedding} Distance")
-            plt.savefig(f"{i}_{job_data.embedding}_embedding_distance.png")
-            plt.close() 
+            # agent.logger.save_log(f'./{i}/logs')
+            # plt.suptitle(f"{job_data.env} Video MPPI {job_data.embedding} Distance")
+            # plt.savefig(f"{i}_{job_data.embedding}_embedding_distance.png")
+            # plt.close() 
 
             # Save trajectory video
-            for camera in agent.env.env.cameras:
-                os.makedirs(f"./{i}/{camera}", exist_ok=True)
-                frames = agent.animate_result_offscreen(camera_name=camera)
-                VID_FILE = OUT_DIR + f'/{i}/{i}_{job_data.embedding}_{camera}' + '.gif'
-                cl = ImageSequenceClip(frames, fps=20)
-                cl.write_gif(VID_FILE, fps=20)
-                frames = np.array(frames)
-                for t2 in range(frames.shape[0]):
-                    img = frames[t2]
-                    result = Image.fromarray((img).astype(np.uint8))
-                    result.save(f"./{i}/{camera}/{t2}.png")
+            # TO-DO: call agent.act_sequence, step through each action, save out that image, write out the video
+            # env.reset()
+            # imgs = []
+            # for act in agent.act_sequence:
+            #     print(env)
+            #     img = env.render() # mode='rgb_array' # render not implemented?
+            #     imgs.append(img)
+            #     env.step(act)
+            # imgs = [Image.fromarray(img) for img in imgs]
+            # imgs[0].save(f"./{i}.gif", save_all=True, append_images=imgs[1:], duration=100, loop=0)
+
+            # for camera in agent.env.env.cameras:
+            #     os.makedirs(f"./{i}/{camera}", exist_ok=True)
+            #     frames = agent.animate_result_offscreen(camera_name=camera)
+            #     VID_FILE = OUT_DIR + f'/{i}/{i}_{job_data.embedding}_{camera}' + '.gif'
+            #     cl = ImageSequenceClip(frames, fps=20)
+            #     cl.write_gif(VID_FILE, fps=20)
+            #     frames = np.array(frames)
+            #     for t2 in range(frames.shape[0]):
+            #         img = frames[t2]
+            #         result = Image.fromarray((img).astype(np.uint8))
+            #         result.save(f"./{i}/{camera}/{t2}.png")
             
         # Save trajectory
         SAVE_FILE = OUT_DIR + '/traj_%i.pickle' % i

@@ -64,15 +64,10 @@ def env_constructor(env_name, device='cuda', image_width=256, image_height=256,
     else:
         env = gym.make(env_name)
         ## Wrap in pixel observation wrapper
-        # env = MuJoCoPixelObs(env, width=image_width, height=image_height, 
-        #                    camera_name=camera_name, device_id=render_gpu_id)
-        env = CustomEmbedding(env, device='cuda', demo_path="/iris/u/oliviayl/repos/affordance-learning/d5rl/datasets/standard_kitchen/kitchen_demos_multitask_lexa_view_and_wrist_npz/kitchen_demos_multitask_npz/friday_kettle_bottomknob_switch_slide/20230528T010656-1be74c034d6940f1a2d9e63d24fc7f83-218.npz")
+        env = MuJoCoPixelObs(env, width=image_width, height=image_height, camera_name=camera_name, device_id=render_gpu_id)
         ## Wrapper which encodes state in pretrained model (additionally compute reward)
-        # env = StateEmbedding(env, embedding_name=embedding_name, device=device, load_path=load_path, 
-        #                 proprio=proprio, camera_name=camera_name,
-        #                  env_name=env_name, pixel_based=pixel_based, 
-        #                  embedding_reward=embedding_reward,
-        #                   goal_timestep=goal_timestep, init_timestep=init_timestep)
+        # env = StateEmbedding(env, embedding_name=embedding_name, device=device, load_path=load_path, proprio=proprio, camera_name=camera_name, env_name=env_name, pixel_based=pixel_based, embedding_reward=embedding_reward, goal_timestep=goal_timestep, init_timestep=init_timestep)
+        env = CustomEmbedding(env, device='cuda', demo_path="/iris/u/oliviayl/repos/affordance-learning/d5rl/datasets/standard_kitchen/kitchen_demos_multitask_lexa_view_and_wrist_npz/kitchen_demos_multitask_npz/friday_kettle_bottomknob_switch_slide/20230528T010656-1be74c034d6940f1a2d9e63d24fc7f83-218.npz")
         env = GymEnv(env)
     return env
 
@@ -96,7 +91,6 @@ class CustomEmbedding(gym.ObservationWrapper):
 
     Args:
         env (Gym environment): the original environment,
-        embedding_name (str, 'baseline'): the name of the convolution model,
         device (str, 'cuda'): where to allocate the model.
 
     """
@@ -106,11 +100,23 @@ class CustomEmbedding(gym.ObservationWrapper):
         # Load demo, extract end effector positions / proprio data
         self.data = np.load(demo_path)
         self.metadata = self.data.files
-        self.proprio = self.data["proprio"][:, :3]
-        self.traj_len = len(self.data["proprio"])
-        self.init_state = self.data["init_qpos"] # CHECK: is self.init_state init_qpos?
-
-        # TO-DO? Clip traj to most meaningful interaction? Demo has traj length 218
+        self.robot_pos = self.data["proprio"][:, :3]
+        self.kettle_pos = self.data["qpos"][:, -7:-4] # kettle trajectories # init_qpos: last 7 are kettle xyz + quat
+        self.kettle_rew = self.data["reward kettle"]
+        self.first_contact = list(self.kettle_rew).index(1)
+        
+        self.kettle_traj = self.kettle_pos[max(0, self.first_contact - 25):min(len(self.kettle_pos), self.first_contact + 25)]
+        # Padding
+        if self.first_contact - 25 < 0:
+            self.kettle_traj = [self.kettle_traj[0] * abs(self.first_contact)] + self.kettle_traj
+        if self.first_contact + 25 > len(self.kettle_pos):
+            self.kettle_traj = [self.kettle_traj[-1] * len(self.kettle_pos) - (self.first_contact + 25)] + self.kettle_traj
+        self.traj_len = 50 # len(self.data["proprio"])
+        assert len(self.kettle_traj) == self.traj_len
+        
+        self.init_qpos = self.data["init_qpos"]
+        self.init_qvel = self.data["init_qvel"]
+        self.step_num = 0
 
         if device == 'cuda' and torch.cuda.is_available():
             device = torch.device('cuda')
@@ -119,26 +125,42 @@ class CustomEmbedding(gym.ObservationWrapper):
         self.device = device
 
     def get_obs(self):
-        return self.env.unwrapped.get_obs()
+        return self.unwrapped.get_obs()
     
-    def step(self, action, step_num):
+    def step(self, action):
         state, reward, done, info = self.env.step(action)
         # Uncomment after testing base version
-        # CHECK: What if step_num > trajectory len
-        # groundtruth_obs = self.proprio[step_num]
-        # reward = -np.linalg.norm(observation, groundtruth_obs)
+        # import pdb 
+        # pdb.set_trace()
+        # obs_ee = info['obs_dict']['end_effector']
+        # obs_kettle = state[-6:-3] # TO-DO: state is images no kettle pos
+        # gt_obs_ee = self.robot_pos[self.step_num]
+        # gt_obs_kettle = self.kettle_pos[self.step_num]
+        # reward = -np.linalg.norm(obs_ee, gt_obs_ee) - np.linalg.norm(obs, gt_obs_kettle) (kettle pos reward)
+        # KIV: Investigating different parameters, magnitude across timesteps
         # Robosuite: r_reach = (1 - np.tanh(10.0 * min(dists))) * reach_mult
+        self.step_num += 1
         return state, reward, done, info
     
     def reset(self):
-        observation = self.env.reset()
-        try:
-            if self.init_state is not None:
-                self.env.set_env_state(self.init_state) # BUG HERE
-        except Exception as e:
-            print("Resetting Initial State Error")
-            print("Unexpected error:", sys.exc_info()[0])
-            print(e) 
+        self.env.reset()
+        self.step_num = 0
+        
+        # https://github.com/stanford-iris-lab/d5rl/blob/7ffae75b3db93032e9d6eb7b66acd89214f0bcbc/benchmark/domains/d4rl2/envs/kitchen/RPL/adept_envs/adept_envs/franka/kitchen_multitask_v0.py#L132
+        reset_pos = self.init_qpos[:].copy()
+        reset_vel = self.init_qvel[:].copy()
+        # self.robot.reset(self.unwrapped, reset_pos, reset_vel)
+        # https://github.com/stanford-iris-lab/d5rl/blob/7ffae75b3db93032e9d6eb7b66acd89214f0bcbc/benchmark/domains/relay-policy-learning/adept_envs/adept_envs/franka/robot/franka_robot.py#L211
+        n_jnt, n_obj = 9, 20
+        env = self.unwrapped
+        env.sim.reset()
+        env.sim.data.qpos[:n_jnt] = reset_pos[:n_jnt].copy()
+        env.sim.data.qvel[:n_jnt] = reset_vel[:n_jnt].copy()
+        env.sim.data.qpos[-n_obj:] = reset_pos[-n_obj:].copy()
+        env.sim.data.qvel[-n_obj:] = reset_vel[-n_obj:].copy()
+        env.sim.forward()
+
+        observation = self.get_obs()
         return observation
 
 class StateEmbedding(gym.ObservationWrapper):
