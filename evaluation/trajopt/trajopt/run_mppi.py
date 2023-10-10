@@ -115,15 +115,15 @@ def configure_jobs(job_data):
 
             # Save trajectory video
             # TO-DO: call agent.act_sequence, step through each action, save out that image, write out the video
-            # env.reset()
-            # imgs = []
-            # for act in agent.act_sequence:
-            #     print(env)
-            #     img = env.render() # mode='rgb_array' # render not implemented?
-            #     imgs.append(img)
-            #     env.step(act)
-            # imgs = [Image.fromarray(img) for img in imgs]
-            # imgs[0].save(f"./{i}.gif", save_all=True, append_images=imgs[1:], duration=100, loop=0)
+            env.reset()
+            imgs = []
+            for act in agent.act_sequence:
+                img = env.env.unwrapped.sim.render(256, 256) # mode='rgb_array'
+                img = img[::-1,:,:]
+                imgs.append(img)
+                env.step(act)
+            imgs = [Image.fromarray(img) for img in imgs]
+            imgs[0].save(f"./{i}.gif", save_all=True, append_images=imgs[1:], duration=100, loop=0)
 
             # for camera in agent.env.env.cameras:
             #     os.makedirs(f"./{i}/{camera}", exist_ok=True)

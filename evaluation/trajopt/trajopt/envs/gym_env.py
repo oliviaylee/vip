@@ -140,7 +140,7 @@ class GymEnv(object):
         try:
             return self.env.unwrapped.get_env_state()
         except:
-            raise NotImplementedError
+            self.env.unwrapped.__getstate__
 
     def set_env_state(self, state_dict):
         try:

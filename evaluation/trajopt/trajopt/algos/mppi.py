@@ -47,7 +47,7 @@ class MPPI(Trajectory):
         self.env.reset()
         self.env.set_seed(seed)
         self.env.reset(seed=seed)
-        self.sol_state.append(self.env.get_env_state().copy())
+        self.sol_state.append(self.env.get_env_state()) # .copy()
         self.sol_obs.append(self.env.get_obs())
         self.act_sequence = np.ones((self.H, self.m)) * self.mean
         self.init_act_sequence = self.act_sequence.copy()
@@ -74,7 +74,7 @@ class MPPI(Trajectory):
         s, r, _, info = self.env.step(action)
 
         self.sol_act.append(action)
-        self.sol_state.append(self.env.get_env_state().copy())
+        self.sol_state.append(self.env.get_env_state()) # .copy()
         self.sol_obs.append(self.env.get_obs())
         self.sol_reward.append(r)
         self.sol_info.append(info)

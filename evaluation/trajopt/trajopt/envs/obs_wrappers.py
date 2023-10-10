@@ -25,6 +25,12 @@ import os
 import sys 
 from trajopt.envs.gym_env import GymEnv
 
+sys.path.append('/iris/u/oliviayl/repos/affordance-learning/d5rl/benchmark/domains/relay-policy-learning/adept_envs/')
+# import jaxrl2
+# from examples.train_offline_pixels_kitchen import make_env
+import adept_envs
+from adept_envs import franka
+
 def init(module, weight_init, bias_init, gain=1):
     weight_init(module.weight.data, gain=gain)
     bias_init(module.bias.data)
@@ -62,9 +68,10 @@ def env_constructor(env_name, device='cuda', image_width=256, image_height=256,
     if not pixel_based and not embedding_reward: 
             env = GymEnv(env_name)
     else:
-        env = gym.make(env_name)
+        env = gym.make('kitchen_relax_rpl-v1') # gym.make(env_name)
+        print(env)
         ## Wrap in pixel observation wrapper
-        env = MuJoCoPixelObs(env, width=image_width, height=image_height, camera_name=camera_name, device_id=render_gpu_id)
+        # env = MuJoCoPixelObs(env, width=image_width, height=image_height, camera_name=camera_name, device_id=render_gpu_id)
         ## Wrapper which encodes state in pretrained model (additionally compute reward)
         # env = StateEmbedding(env, embedding_name=embedding_name, device=device, load_path=load_path, proprio=proprio, camera_name=camera_name, env_name=env_name, pixel_based=pixel_based, embedding_reward=embedding_reward, goal_timestep=goal_timestep, init_timestep=init_timestep)
         env = CustomEmbedding(env, device='cuda', demo_path="/iris/u/oliviayl/repos/affordance-learning/d5rl/datasets/standard_kitchen/kitchen_demos_multitask_lexa_view_and_wrist_npz/kitchen_demos_multitask_npz/friday_kettle_bottomknob_switch_slide/20230528T010656-1be74c034d6940f1a2d9e63d24fc7f83-218.npz")
@@ -99,20 +106,32 @@ class CustomEmbedding(gym.ObservationWrapper):
 
         # Load demo, extract end effector positions / proprio data
         self.data = np.load(demo_path)
-        self.metadata = self.data.files
+        self.first_frame = self.data['image'][0]
+        self.first_frame_camera12 = self.data['extra_image_camera_12_rgb'][0]
+        self.first_frame_gripper = self.data['extra_image_camera_gripper_rgb'][0]
+        self.domain = ... 
+
+        # RESET: self.unwrapped.reset(domain ...)
+        # Image.fromarray(self.first_frame).save('image0.png')
+        # Image.fromarray(self.first_frame_camera12).save('camera12_img0.png')
+        # Image.fromarray(self.first_frame_gripper).save('gripper_img0.png')
+
+        # DO A REACHING TASK AND START FROM INITIAL FRAME, JUST USE ROBOT POS AS REWARD
+        # Later on, set qpos/qvel to the first frame of truncated demo
+        self.data_keys = self.data.files
         self.robot_pos = self.data["proprio"][:, :3]
         self.kettle_pos = self.data["qpos"][:, -7:-4] # kettle trajectories # init_qpos: last 7 are kettle xyz + quat
         self.kettle_rew = self.data["reward kettle"]
         self.first_contact = list(self.kettle_rew).index(1)
         
-        self.kettle_traj = self.kettle_pos[max(0, self.first_contact - 25):min(len(self.kettle_pos), self.first_contact + 25)]
+        # self.kettle_traj = self.kettle_pos[max(0, self.first_contact - 25):min(len(self.kettle_pos), self.first_contact + 25)]
         # Padding
-        if self.first_contact - 25 < 0:
-            self.kettle_traj = [self.kettle_traj[0] * abs(self.first_contact)] + self.kettle_traj
-        if self.first_contact + 25 > len(self.kettle_pos):
-            self.kettle_traj = [self.kettle_traj[-1] * len(self.kettle_pos) - (self.first_contact + 25)] + self.kettle_traj
-        self.traj_len = 50 # len(self.data["proprio"])
-        assert len(self.kettle_traj) == self.traj_len
+        # if self.first_contact - 25 < 0:
+        #     self.kettle_traj = [self.kettle_traj[0] * abs(self.first_contact)] + self.kettle_traj
+        # if self.first_contact + 25 > len(self.kettle_pos):
+        #     self.kettle_traj = [self.kettle_traj[-1] * len(self.kettle_pos) - (self.first_contact + 25)] + self.kettle_traj
+        # self.traj_len = 50 # len(self.data["proprio"])
+        # assert len(self.kettle_traj) == self.traj_len
         
         self.init_qpos = self.data["init_qpos"]
         self.init_qvel = self.data["init_qvel"]
@@ -130,13 +149,11 @@ class CustomEmbedding(gym.ObservationWrapper):
     def step(self, action):
         state, reward, done, info = self.env.step(action)
         # Uncomment after testing base version
-        # import pdb 
-        # pdb.set_trace()
-        # obs_ee = info['obs_dict']['end_effector']
-        # obs_kettle = state[-6:-3] # TO-DO: state is images no kettle pos
-        # gt_obs_ee = self.robot_pos[self.step_num]
-        # gt_obs_kettle = self.kettle_pos[self.step_num]
-        # reward = -np.linalg.norm(obs_ee, gt_obs_ee) - np.linalg.norm(obs, gt_obs_kettle) (kettle pos reward)
+        obs_ee = info['obs_dict']['end_effector']
+        obs_kettle = info['obs_dict']['qpos'][-6:-3]
+        gt_obs_ee = self.robot_pos[self.step_num]
+        gt_obs_kettle = self.kettle_pos[self.step_num]
+        reward = -np.linalg.norm(obs_ee - gt_obs_ee) - np.linalg.norm(obs_kettle - gt_obs_kettle)
         # KIV: Investigating different parameters, magnitude across timesteps
         # Robosuite: r_reach = (1 - np.tanh(10.0 * min(dists))) * reach_mult
         self.step_num += 1
@@ -147,21 +164,79 @@ class CustomEmbedding(gym.ObservationWrapper):
         self.step_num = 0
         
         # https://github.com/stanford-iris-lab/d5rl/blob/7ffae75b3db93032e9d6eb7b66acd89214f0bcbc/benchmark/domains/d4rl2/envs/kitchen/RPL/adept_envs/adept_envs/franka/kitchen_multitask_v0.py#L132
-        reset_pos = self.init_qpos[:].copy()
-        reset_vel = self.init_qvel[:].copy()
-        # self.robot.reset(self.unwrapped, reset_pos, reset_vel)
-        # https://github.com/stanford-iris-lab/d5rl/blob/7ffae75b3db93032e9d6eb7b66acd89214f0bcbc/benchmark/domains/relay-policy-learning/adept_envs/adept_envs/franka/robot/franka_robot.py#L211
-        n_jnt, n_obj = 9, 20
+        # reset_pos = self.init_qpos[:].copy()
+        # reset_vel = self.init_qvel[:].copy()
+        # # self.robot.reset(self.unwrapped, reset_pos, reset_vel)
+        # # https://github.com/stanford-iris-lab/d5rl/blob/7ffae75b3db93032e9d6eb7b66acd89214f0bcbc/benchmark/domains/relay-policy-learning/adept_envs/adept_envs/franka/robot/franka_robot.py#L211
+        # n_jnt, n_obj = 9, 20
         env = self.unwrapped
-        env.sim.reset()
-        env.sim.data.qpos[:n_jnt] = reset_pos[:n_jnt].copy()
-        env.sim.data.qvel[:n_jnt] = reset_vel[:n_jnt].copy()
-        env.sim.data.qpos[-n_obj:] = reset_pos[-n_obj:].copy()
-        env.sim.data.qvel[-n_obj:] = reset_vel[-n_obj:].copy()
-        env.sim.forward()
+        # env.sim.reset()
+        # env.sim.data.qpos[:n_jnt] = reset_pos[:n_jnt].copy()
+        # env.sim.data.qvel[:n_jnt] = reset_vel[:n_jnt].copy()
+        # env.sim.data.qpos[-n_obj:] = reset_pos[-n_obj:].copy()
+        # env.sim.data.qvel[-n_obj:] = reset_vel[-n_obj:].copy()
+        # env.sim.forward()
 
         observation = self.get_obs()
+
+        # print('saving reset img', os.getcwd())
+        # img = env.sim.render(64, 64)
+        # img = img[::-1,:,:]
+        # Image.fromarray(img).save('env_reset_img0.png')
+        # input()
         return observation
+    
+    def get_env_state(self):
+        # https://github.com/oliviaylee/vip/blob/0aadeab2736324eda45de0e8df96dbb59e608145/evaluation/mj_envs/mj_envs/envs/env_base.py#L373
+        paqp = self.sim.data.qpos.ravel().copy()
+        qv = self.sim.data.qvel.ravel().copy()
+        act = self.sim.data.act.ravel().copy() if self.sim.model.na>0 else None
+        mocap_pos = self.sim.data.mocap_pos.copy() if self.sim.model.nmocap>0 else None
+        mocap_quat = self.sim.data.mocap_quat.copy() if self.sim.model.nmocap>0 else None
+        site_pos = self.sim.model.site_pos[:].copy() if self.sim.model.nsite>0 else None
+        site_quat = self.sim.model.site_quat[:].copy() if self.sim.model.nsite>0 else None
+        body_pos = self.sim.model.body_pos[:].copy()
+        body_quat = self.sim.model.body_quat[:].copy()
+        return dict(qpos=qp,
+                    qvel=qv,
+                    act=act,
+                    mocap_pos=mocap_pos,
+                    mocap_quat=mocap_quat,
+                    site_pos=site_pos,
+                    site_quat=site_quat,
+                    body_pos=body_pos,
+                    body_quat=body_quat)
+    
+    def set_env_state(self, state_dict): # set initial qpos
+        qp = state_dict['qpos'] # robot + object
+        qv = state_dict['qvel']
+        # act = state_dict['act']
+        self.set_state(qp, qv, act)
+        # if self.sim.model.nmocap>0:
+        #     self.sim.data.mocap_pos[:] = state_dict['mocap_pos']
+        #     self.sim.data.mocap_quat[:] = state_dict['mocap_quat']
+        # if self.sim.model.nsite>0:
+        #     self.sim.model.site_pos[:] = state_dict['site_pos']
+        #     self.sim.model.site_quat[:] = state_dict['site_quat']
+        # self.sim.model.body_pos[:] = state_dict['body_pos']
+        # self.sim.model.body_quat[:] = state_dict['body_quat']
+        self.sim.forward()
+    
+    def set_state(self, qpos=None, qvel=None, act=None):
+        """
+        Set MuJoCo sim state
+        """
+        assert qpos.shape == (self.sim.model.nq,) and qvel.shape == (self.sim.model.nv,)
+        old_state = self.sim.get_state()
+        if qpos is None:
+            qpos = old_state.qpos
+        if qvel is None:
+            qvel = old_state.qvel
+        if act is None:
+            act = old_state.act
+        new_state = mujoco_py.MjSimState(old_state.time, qpos=qpos, qvel=qvel, act=act, udd_state={})
+        self.sim.set_state(new_state)
+        self.sim.forward()
 
 class StateEmbedding(gym.ObservationWrapper):
     """
