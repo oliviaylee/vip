@@ -119,7 +119,7 @@ class CustomEmbedding(gym.ObservationWrapper):
         # DO A REACHING TASK AND START FROM INITIAL FRAME, JUST USE ROBOT POS AS REWARD
         # Later on, set qpos/qvel to the first frame of truncated demo
         self.data_keys = self.data.files
-        self.robot_pos = self.data["proprio"][:, :3]
+        self.robot_pos = self.data["qpos"][:, :3]
         self.kettle_pos = self.data["qpos"][:, -7:-4] # kettle trajectories # init_qpos: last 7 are kettle xyz + quat
         self.kettle_rew = self.data["reward kettle"]
         self.first_contact = list(self.kettle_rew).index(1)
@@ -149,41 +149,26 @@ class CustomEmbedding(gym.ObservationWrapper):
     def step(self, action):
         state, reward, done, info = self.env.step(action)
         # Uncomment after testing base version
-        obs_ee = info['obs_dict']['end_effector']
-        obs_kettle = info['obs_dict']['qpos'][-6:-3]
+        obs_ee = info['obs_dict']['qp'][:3]
+        obs_kettle = info['obs_dict']['obj_qp'][-6:-3]
         gt_obs_ee = self.robot_pos[self.step_num]
         gt_obs_kettle = self.kettle_pos[self.step_num]
         reward = -np.linalg.norm(obs_ee - gt_obs_ee) - np.linalg.norm(obs_kettle - gt_obs_kettle)
         # KIV: Investigating different parameters, magnitude across timesteps
         # Robosuite: r_reach = (1 - np.tanh(10.0 * min(dists))) * reach_mult
         self.step_num += 1
+
+        info['rwd_sparse'] = bool(reward >= -0.1)
+        info['rwd_dense'] = reward
+        info['solved'] = bool(reward >= -0.1)
         return state, reward, done, info
     
     def reset(self):
         self.env.reset()
         self.step_num = 0
-        
-        # https://github.com/stanford-iris-lab/d5rl/blob/7ffae75b3db93032e9d6eb7b66acd89214f0bcbc/benchmark/domains/d4rl2/envs/kitchen/RPL/adept_envs/adept_envs/franka/kitchen_multitask_v0.py#L132
-        # reset_pos = self.init_qpos[:].copy()
-        # reset_vel = self.init_qvel[:].copy()
-        # # self.robot.reset(self.unwrapped, reset_pos, reset_vel)
-        # # https://github.com/stanford-iris-lab/d5rl/blob/7ffae75b3db93032e9d6eb7b66acd89214f0bcbc/benchmark/domains/relay-policy-learning/adept_envs/adept_envs/franka/robot/franka_robot.py#L211
-        # n_jnt, n_obj = 9, 20
-        env = self.unwrapped
-        # env.sim.reset()
-        # env.sim.data.qpos[:n_jnt] = reset_pos[:n_jnt].copy()
-        # env.sim.data.qvel[:n_jnt] = reset_vel[:n_jnt].copy()
-        # env.sim.data.qpos[-n_obj:] = reset_pos[-n_obj:].copy()
-        # env.sim.data.qvel[-n_obj:] = reset_vel[-n_obj:].copy()
-        # env.sim.forward()
-
+        reset_state = dict(qpos=self.init_qpos, qvel=self.init_qvel)
+        self.set_env_state(reset_state)
         observation = self.get_obs()
-
-        # print('saving reset img', os.getcwd())
-        # img = env.sim.render(64, 64)
-        # img = img[::-1,:,:]
-        # Image.fromarray(img).save('env_reset_img0.png')
-        # input()
         return observation
     
     def get_env_state(self):
