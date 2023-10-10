@@ -138,16 +138,15 @@ class GymEnv(object):
 
     def get_env_state(self):
         try:
-            return self.env.unwrapped.get_env_state()
+            return self.env.get_env_state()
         except:
-            self.env.unwrapped.__getstate__
+            raise NotImplementedError
 
     def set_env_state(self, state_dict):
         try:
-            self.env.unwrapped.set_env_state(state_dict)
+            self.env.set_env_state(state_dict)
         except:
-            self.env.unwrapped.__setstate__(state_dict)
-            # raise NotImplementedError
+            raise NotImplementedError
 
     def real_env_step(self, bool_val):
         try:

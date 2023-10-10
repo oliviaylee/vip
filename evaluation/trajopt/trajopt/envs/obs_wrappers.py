@@ -188,7 +188,7 @@ class CustomEmbedding(gym.ObservationWrapper):
     
     def get_env_state(self):
         # https://github.com/oliviaylee/vip/blob/0aadeab2736324eda45de0e8df96dbb59e608145/evaluation/mj_envs/mj_envs/envs/env_base.py#L373
-        paqp = self.sim.data.qpos.ravel().copy()
+        qp = self.sim.data.qpos.ravel().copy()
         qv = self.sim.data.qvel.ravel().copy()
         act = self.sim.data.act.ravel().copy() if self.sim.model.na>0 else None
         mocap_pos = self.sim.data.mocap_pos.copy() if self.sim.model.nmocap>0 else None
@@ -211,7 +211,7 @@ class CustomEmbedding(gym.ObservationWrapper):
         qp = state_dict['qpos'] # robot + object
         qv = state_dict['qvel']
         # act = state_dict['act']
-        self.set_state(qp, qv, act)
+        self.set_state(qp, qv, None)
         # if self.sim.model.nmocap>0:
         #     self.sim.data.mocap_pos[:] = state_dict['mocap_pos']
         #     self.sim.data.mocap_quat[:] = state_dict['mocap_quat']
@@ -221,22 +221,20 @@ class CustomEmbedding(gym.ObservationWrapper):
         # self.sim.model.body_pos[:] = state_dict['body_pos']
         # self.sim.model.body_quat[:] = state_dict['body_quat']
         self.sim.forward()
-    
+
     def set_state(self, qpos=None, qvel=None, act=None):
         """
         Set MuJoCo sim state
         """
         assert qpos.shape == (self.sim.model.nq,) and qvel.shape == (self.sim.model.nv,)
-        old_state = self.sim.get_state()
-        if qpos is None:
-            qpos = old_state.qpos
-        if qvel is None:
-            qvel = old_state.qvel
-        if act is None:
-            act = old_state.act
-        new_state = mujoco_py.MjSimState(old_state.time, qpos=qpos, qvel=qvel, act=act, udd_state={})
-        self.sim.set_state(new_state)
+        state = self.sim.get_state()
+        for i in range(self.sim.model.nq):
+            state[i] = qpos[i]
+        for i in range(self.sim.model.nv):
+            state[self.sim.model.nq + i] = qvel[i]
+        self.sim.set_state(state)
         self.sim.forward()
+
 
 class StateEmbedding(gym.ObservationWrapper):
     """
@@ -501,4 +499,3 @@ class MuJoCoPixelObs(gym.ObservationWrapper):
         # This function creates observations based on the current state of the environment.
         # Argument `observation` is ignored, but `gym.ObservationWrapper` requires it.
         return self.get_image()
-        
