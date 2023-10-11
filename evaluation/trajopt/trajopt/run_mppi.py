@@ -51,6 +51,7 @@ def configure_jobs(job_data):
     filter_coefs = [sigma, job_data['filter']['beta_0'], job_data['filter']['beta_1'], job_data['filter']['beta_2']]
     trajectories = []  # TrajOpt format (list of trajectory classes)
 
+    stitched_first_imgs = []
     # Generate trajectories and plot embedding distances
     for i in range(job_data['num_traj']):
         os.makedirs(f"./{i}", exist_ok=True)
@@ -82,11 +83,8 @@ def configure_jobs(job_data):
 
         for i in tqdm(range(job_data['H_total'])):
             # take one-step with trajectory optimization
-            print('step')
             agent.train_step(job_data['num_iter'])
-            print('train step')
             step_info = agent.sol_info[-1]
-            # print(step_info['obs_dict'].keys())
             step_log = {'t':step_info['obs_dict']['t'],
             'rwd_sparse': step_info['rwd_sparse'],
             'rwd_dense': step_info['rwd_dense'],
@@ -118,12 +116,13 @@ def configure_jobs(job_data):
             env.reset()
             imgs = []
             for act in agent.act_sequence:
-                img = env.env.unwrapped.sim.render(256, 256) # mode='rgb_array'
-                img = img[::-1,:,:]
+                img = env.env.render_extra_views()['camera_12_rgb']
                 imgs.append(img)
                 env.step(act)
             imgs = [Image.fromarray(img) for img in imgs]
             imgs[0].save(f"./{i}.gif", save_all=True, append_images=imgs[1:], duration=100, loop=0)
+
+            stitched_first_imgs.append(imgs[0])
 
             # for camera in agent.env.env.cameras:
             #     os.makedirs(f"./{i}/{camera}", exist_ok=True)
@@ -136,7 +135,14 @@ def configure_jobs(job_data):
             #         img = frames[t2]
             #         result = Image.fromarray((img).astype(np.uint8))
             #         result.save(f"./{i}/{camera}/{t2}.png")
-            
+
+        stitched_first_imgs[0].save(
+            f"./stitched.gif",
+            save_all=True,
+            append_images=stitched_first_imgs[1:],
+            duration=100,
+            loop=0)
+
         # Save trajectory
         SAVE_FILE = OUT_DIR + '/traj_%i.pickle' % i
         pickle.dump(agent, open(SAVE_FILE, 'wb'))
