@@ -150,7 +150,7 @@ class GymEnv(object):
 
     def real_env_step(self, bool_val):
         try:
-            self.env.unwrapped.real_step = bool_val
+            self.env.real_step = bool_val # self.env.unwrapped.real_step = bool_val
         except:
             raise NotImplementedError
 

@@ -20,8 +20,8 @@ def do_env_rollout(env, start_state, act_list, env_kwargs=None):
     e = env
     # e = copy.deepcopy(env)
     # e = env_constructor(**env_kwargs)
-    e.reset()
     e.real_env_step(False)
+    e.env.env.reset()
     paths = []
     H = act_list[0].shape[0]
     N = len(act_list)

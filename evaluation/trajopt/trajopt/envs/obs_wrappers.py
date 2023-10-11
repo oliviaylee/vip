@@ -100,7 +100,6 @@ def env_constructor(env_name, device='cuda', image_width=256, image_height=256,
             env = GymEnv(env_name)
     else:
         env = gym.make('kitchen_relax_rpl-v1') # gym.make(env_name)
-        print(env)
         ## Wrap in pixel observation wrapper
         # env = MuJoCoPixelObs(env, width=image_width, height=image_height, camera_name=camera_name, device_id=render_gpu_id)
         ## Wrapper which encodes state in pretrained model (additionally compute reward)
@@ -133,16 +132,20 @@ class CustomEmbedding(gym.ObservationWrapper):
 
     """
     def __init__(self, env, device='cuda', demo_path="/iris/u/oliviayl/repos/affordance-learning/d5rl/datasets/standard_kitchen/kitchen_demos_multitask_lexa_view_and_wrist_npz/kitchen_demos_multitask_npz/friday_kettle_bottomknob_switch_slide/20230528T010656-1be74c034d6940f1a2d9e63d24fc7f83-218.npz"):
-        gym.ObservationWrapper.__init__(self, env)
+        super().__init__(env)
 
         # Load demo, extract end effector positions / proprio data
         self.data = np.load(demo_path)
+        # self.domain = ... # RANDOMIZED ENV (D5RL) 
+        # self.unwrapped.reset(domain ...) # RANDOMIZED ENV RESET
+
         self.first_frame = self.data['image'][0]
         self.first_frame_camera12 = self.data['extra_image_camera_12_rgb'][0]
         self.first_frame_gripper = self.data['extra_image_camera_gripper_rgb'][0]
-        self.domain = ... 
 
-        # RESET: self.unwrapped.reset(domain ...)
+        imgs = [Image.fromarray(img) for img in self.data['image']]
+        imgs[0].save(f"./demo.gif", save_all=True, append_images=imgs[1:], duration=100, loop=0)
+
         # Image.fromarray(self.first_frame).save('image0.png')
         # Image.fromarray(self.first_frame_camera12).save('camera12_img0.png')
         # Image.fromarray(self.first_frame_gripper).save('gripper_img0.png')
@@ -150,29 +153,39 @@ class CustomEmbedding(gym.ObservationWrapper):
         # DO A REACHING TASK AND START FROM INITIAL FRAME, JUST USE ROBOT POS AS REWARD
         # Later on, set qpos/qvel to the first frame of truncated demo
         self.data_keys = self.data.files
-        self.robot_pos = self.data["qpos"][:, :3]
-        self.kettle_pos = self.data["qpos"][:, -7:-4] # kettle trajectories # init_qpos: last 7 are kettle xyz + quat
+        self.robot_pos = self.data["qpos"][:, :3] # self.data["proprio"]? check ee_pos and proprio
+        self.kettle_pos = self.data["qpos"][:, -7:-4] # init_qpos: last 7 are kettle xyz + quat
         self.kettle_rew = self.data["reward kettle"]
         self.first_contact = list(self.kettle_rew).index(1)
-        
+
+        # REACHING TRAJECTORY
+        self.robot_traj = self.robot_pos[:self.first_contact]
+        if len(self.robot_traj) > 50:
+            self.robot_traj = self.robot_traj[:50]
+        else:
+            padding = np.stack([self.robot_traj[-1] for _ in range(50 - len(self.robot_traj))], axis=0)
+            self.robot_traj = np.concatenate((self.robot_traj, padding))
+
+        # KETTLE INTERACTION TRAJECTORY
+        # self.first_contact = list(self.kettle_rew).index(1)
+        # self.robot_traj = self.robot_pos[max(0, self.first_contact - 25):min(len(self.robot_pos), self.first_contact + 25)]
         # self.kettle_traj = self.kettle_pos[max(0, self.first_contact - 25):min(len(self.kettle_pos), self.first_contact + 25)]
         # Padding
         # if self.first_contact - 25 < 0:
+        #     self.robot_traj = [self.robot_traj[0] * abs(self.first_contact)] + self.robot_traj
         #     self.kettle_traj = [self.kettle_traj[0] * abs(self.first_contact)] + self.kettle_traj
         # if self.first_contact + 25 > len(self.kettle_pos):
+        #     self.robot_traj = [self.robot_traj[-1] * len(self.robot_traj) - (self.first_contact + 25)] + self.robot_traj
         #     self.kettle_traj = [self.kettle_traj[-1] * len(self.kettle_pos) - (self.first_contact + 25)] + self.kettle_traj
-        # self.traj_len = 50 # len(self.data["proprio"])
+        self.traj_len = 50 # len(self.data["proprio"])
+        assert len(self.robot_traj) == self.traj_len
         # assert len(self.kettle_traj) == self.traj_len
         
         self.init_qpos = self.data["init_qpos"]
         self.init_qvel = self.data["init_qvel"]
         self.step_num = 0
-        # TODO: Need to take into account real step
-        # Real step distinguishes between real and planning steps
-        self.real_step = False
-
+        self.real_step = True
         self.add_cameras(camera_ids=range(13))
-
         self.add_cameras(camera_ids=range(13))
 
         if device == 'cuda' and torch.cuda.is_available():
@@ -187,29 +200,40 @@ class CustomEmbedding(gym.ObservationWrapper):
     def step(self, action):
         state, reward, done, info = self.env.step(action)
         # Uncomment after testing base version
-        obs_ee = info['obs_dict']['qp'][:3]
+        obs_ee = info['obs_dict']['ee_qp'][:3]
         obs_kettle = info['obs_dict']['obj_qp'][-6:-3]
         gt_obs_ee = self.robot_pos[self.step_num]
         gt_obs_kettle = self.kettle_pos[self.step_num]
-        reward = -np.linalg.norm(obs_ee - gt_obs_ee) - np.linalg.norm(obs_kettle - gt_obs_kettle)
+        reward_ee = -np.linalg.norm(obs_ee - gt_obs_ee)
+        reward_kettle = -np.linalg.norm(obs_kettle - gt_obs_kettle)
+        reward = reward_ee # + reward_kettle
         # KIV: Investigating different parameters, magnitude across timesteps
         # Robosuite: r_reach = (1 - np.tanh(10.0 * min(dists))) * reach_mult
-        self.step_num += 1
+        if self.real_step:
+            self.step_num += 1
 
         info['rwd_sparse'] = bool(reward >= -0.1)
         info['rwd_dense'] = reward
+        info['rwd_ee'] = reward_ee
+        info['rwd_kettle'] = reward_kettle
         info['solved'] = bool(reward >= -0.1)
         return state, reward, done, info
     
     def reset(self):
-        self.env.reset()
-        self.step_num = 0
-        reset_state = dict(qpos=self.init_qpos, qvel=self.init_qvel)
-        self.set_env_state(reset_state)
+        if self.real_step:
+            self.env.reset()
+            self.step_num = 0
+            reset_state = dict(qpos=self.init_qpos, qvel=self.init_qvel)
+            self.set_env_state(reset_state)
+            state = self.get_env_state()
+            assert np.allclose(state['qpos'], self.init_qpos)
+            assert np.allclose(state['qvel'], self.init_qvel)
+            # print('saving reset img', os.getcwd())
+            # img = self.render_extra_views()['camera_12_rgb']
+            # Image.fromarray(img).save('env_reset_img0.png')
+            # input()
         observation = self.get_obs()
-        state = self.get_env_state()
-        assert np.allclose(state['qpos'], self.init_qpos)
-        assert np.allclose(state['qvel'], self.init_qvel)
+
         return observation
     
     def get_env_state(self):

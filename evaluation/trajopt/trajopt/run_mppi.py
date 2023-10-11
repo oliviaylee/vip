@@ -51,7 +51,7 @@ def configure_jobs(job_data):
     filter_coefs = [sigma, job_data['filter']['beta_0'], job_data['filter']['beta_1'], job_data['filter']['beta_2']]
     trajectories = []  # TrajOpt format (list of trajectory classes)
 
-    stitched_first_imgs = []
+    actual_trajectory = []
     # Generate trajectories and plot embedding distances
     for i in range(job_data['num_traj']):
         os.makedirs(f"./{i}", exist_ok=True)
@@ -88,6 +88,8 @@ def configure_jobs(job_data):
             step_log = {'t':step_info['obs_dict']['t'],
             'rwd_sparse': step_info['rwd_sparse'],
             'rwd_dense': step_info['rwd_dense'],
+            'rwd_ee': step_info['rwd_ee'],
+            'rwd_kettle': step_info['rwd_kettle'],
             'solved': step_info['solved'] * 1.0}
             # 'ee_error':step_info['obs_dict']['ee_error'],
             # 'robot_error':step_info['obs_dict']['robot_error'],
@@ -111,18 +113,23 @@ def configure_jobs(job_data):
             # plt.savefig(f"{i}_{job_data.embedding}_embedding_distance.png")
             # plt.close() 
 
-            # Save trajectory video
-            # TO-DO: call agent.act_sequence, step through each action, save out that image, write out the video
+            # Save trajectory video: step through each action in agent.act_sequence, save out that image, write out the video
+            env.real_env_step(False)
             env.reset()
+            reset_img = env.env.render_extra_views()['camera_12_rgb'].copy()
+            Image.fromarray(reset_img).save('reset_img.png')
+            env.set_env_state(agent.sol_state[-1])
             imgs = []
             for act in agent.act_sequence:
-                img = env.env.render_extra_views()['camera_12_rgb']
+                img = env.env.render_extra_views()['camera_12_rgb'].copy()
                 imgs.append(img)
+                Image.fromarray(reset_img).save(f"./{i}_init.png")
+                input()
                 env.step(act)
             imgs = [Image.fromarray(img) for img in imgs]
-            imgs[0].save(f"./{i}.gif", save_all=True, append_images=imgs[1:], duration=100, loop=0)
+            imgs[0].save(f"./{i}_plan.gif", save_all=True, append_images=imgs[1:], duration=100, loop=0)
 
-            stitched_first_imgs.append(imgs[0])
+            actual_trajectory.append(imgs[0].copy())
 
             # for camera in agent.env.env.cameras:
             #     os.makedirs(f"./{i}/{camera}", exist_ok=True)
@@ -136,22 +143,22 @@ def configure_jobs(job_data):
             #         result = Image.fromarray((img).astype(np.uint8))
             #         result.save(f"./{i}/{camera}/{t2}.png")
 
-        stitched_first_imgs[0].save(
-            f"./stitched.gif",
+        actual_trajectory[0].save(
+            f"./actual_traj.gif",
             save_all=True,
-            append_images=stitched_first_imgs[1:],
+            append_images=actual_trajectory[1:],
             duration=100,
             loop=0)
 
         # Save trajectory
-        SAVE_FILE = OUT_DIR + '/traj_%i.pickle' % i
-        pickle.dump(agent, open(SAVE_FILE, 'wb'))
+        # SAVE_FILE = OUT_DIR + '/traj_%i.pickle' % i
+        # pickle.dump(agent, open(SAVE_FILE, 'wb'))
         
         end_time = timer.time()
         print("Trajectory reward = %f" % np.sum(agent.sol_reward))
         print("Optimization time for this trajectory = %f" % (end_time - start_time))
-        trajectories.append(agent)
-        pickle.dump(trajectories, open(PICKLE_FILE, 'wb'))
+        # trajectories.append(agent)
+        # pickle.dump(trajectories, open(PICKLE_FILE, 'wb'))
     
 if __name__ == "__main__":
     mp.set_start_method('spawn')
