@@ -15,6 +15,7 @@ import torchvision
 import torchvision.models as models
 import torchvision.transforms as T
 from torchvision.transforms import InterpolationMode
+from dm_control.mujoco import engine
 
 from PIL import Image
 from pathlib import Path
@@ -30,6 +31,36 @@ sys.path.append('/iris/u/oliviayl/repos/affordance-learning/d5rl/benchmark/domai
 # from examples.train_offline_pixels_kitchen import make_env
 import adept_envs
 from adept_envs import franka
+
+
+CAMERAS = {
+    0: dict(distance=2.1, lookat=[-0.4, 0.5, 2.0], azimuth=70,
+            elevation=-37.5),
+    1: dict(distance=2.2,
+            lookat=[-0.2, 0.75, 2.0],
+            azimuth=150,
+            elevation=-30.0),
+    2: dict(distance=4.5, lookat=[-0.2, 0.75, 2.0], azimuth=-66, elevation=-65),
+    3: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=70, elevation=-35
+            ),  # original, as in https://relay-policy-learning.github.io/
+    4: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=70,
+            elevation=-50),  # angled up to get a more top-down view
+    5: dict(distance=2.65, lookat=[0, 0, 2.0], azimuth=90, elevation=-60
+            ),  # similar to appendix D of https://arxiv.org/pdf/1910.11956.pdf
+    6: dict(distance=2.5, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-60
+            ),  # 3-6 are first person views at different angles and distances
+    7: dict(
+        distance=2.5, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-45
+    ),  # problem w/ POV is that the knobs can be hidden by the hinge drawer and arm
+    8: dict(distance=2.9, lookat=[-0.05, 0.5, 2.0], azimuth=90, elevation=-50),
+    9: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=90,
+            elevation=-50),  # move back so less of cabinets
+    10: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-35),
+    11: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-10),
+
+    12: dict(distance=1.86, lookat=[-0.3, .5, 2.], azimuth=90, elevation=-60) # LEXA view
+}
+
 
 def init(module, weight_init, bias_init, gain=1):
     weight_init(module.weight.data, gain=gain)
@@ -137,6 +168,8 @@ class CustomEmbedding(gym.ObservationWrapper):
         self.init_qvel = self.data["init_qvel"]
         self.step_num = 0
 
+        self.add_cameras(camera_ids=range(13))
+
         if device == 'cuda' and torch.cuda.is_available():
             device = torch.device('cuda')
         else:
@@ -169,6 +202,9 @@ class CustomEmbedding(gym.ObservationWrapper):
         reset_state = dict(qpos=self.init_qpos, qvel=self.init_qvel)
         self.set_env_state(reset_state)
         observation = self.get_obs()
+        state = self.get_env_state()
+        assert np.allclose(state['qpos'], self.init_qpos)
+        assert np.allclose(state['qvel'], self.init_qvel)
         return observation
     
     def get_env_state(self):
@@ -219,6 +255,43 @@ class CustomEmbedding(gym.ObservationWrapper):
             state[self.sim.model.nq + i] = qvel[i]
         self.sim.set_state(state)
         self.sim.forward()
+
+    def add_cameras(self, camera_ids=None):
+        self.cameras = dict()
+        for camera_id in camera_ids:
+            camera = engine.MovableCamera(self.sim,
+                                          height=64,
+                                          width=64)
+            camera.set_pose(**CAMERAS[camera_id])
+            self.cameras['camera_{}'.format(camera_id)] = camera
+
+        self.cameras['camera_gripper'] = engine.Camera(
+            self.sim,
+            height=64,
+            width=64,
+            camera_id='gripper_camera_rgb')
+
+    def render_extra_views(self, mode='rgb', depth=False, segmentation=False):
+        imgs = {}
+        if 'rgb' in mode:
+            # http://www.mujoco.org/book/APIreference.html#mjvOption
+            # https://github.com/deepmind/dm_control/blob/9e0fe0f0f9713a2a993ca78776529011d6c5fbeb/dm_control/mujoco/engine.py#L200
+            # mjtRndFlag(mjRND_SHADOW=0, mjRND_WIREFRAME=1, mjRND_REFLECTION=2, mjRND_ADDITIVE=3, mjRND_SKYBOX=4, mjRND_FOG=5, mjRND_HAZE=6, mjRND_SEGMENT=7, mjRND_IDCOLOR=8, mjNRNDFLAG=9)
+
+            for camera_id, camera in self.cameras.items():
+                img_rgb = camera.render(render_flag_overrides=dict(
+                    skybox=False, fog=False, haze=False))
+                imgs[camera_id + "_rgb"] = img_rgb
+
+        if 'depth' in mode:
+            for camera_id, camera in self.cameras.items():
+                img_depth = camera.render(depth=True, segmentation=False)
+                imgs[camera_id + "_depth"] = np.clip(img_depth, 0.0, 4.0)
+
+        if 'human' in mode:
+            self.renderer.render_to_window()  # adept_envs.mujoco_env.MujocoEnv.render
+
+        return imgs
 
 
 class StateEmbedding(gym.ObservationWrapper):
