@@ -167,6 +167,9 @@ class CustomEmbedding(gym.ObservationWrapper):
         self.init_qpos = self.data["init_qpos"]
         self.init_qvel = self.data["init_qvel"]
         self.step_num = 0
+        # TODO: Need to take into account real step
+        # Real step distinguishes between real and planning steps
+        self.real_step = False
 
         self.add_cameras(camera_ids=range(13))
 
