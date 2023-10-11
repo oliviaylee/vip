@@ -133,7 +133,7 @@ class CustomEmbedding(gym.ObservationWrapper):
 
     """
     def __init__(self, env, device='cuda', demo_path="/iris/u/oliviayl/repos/affordance-learning/d5rl/datasets/standard_kitchen/kitchen_demos_multitask_lexa_view_and_wrist_npz/kitchen_demos_multitask_npz/friday_kettle_bottomknob_switch_slide/20230528T010656-1be74c034d6940f1a2d9e63d24fc7f83-218.npz"):
-        gym.ObservationWrapper.__init__(self, env)
+        super().__init__(env)
 
         # Load demo, extract end effector positions / proprio data
         self.data = np.load(demo_path)

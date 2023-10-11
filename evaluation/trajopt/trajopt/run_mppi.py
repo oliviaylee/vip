@@ -116,13 +116,13 @@ def configure_jobs(job_data):
             env.reset()
             imgs = []
             for act in agent.act_sequence:
-                img = env.env.render_extra_views()['camera_12_rgb']
+                img = env.env.render_extra_views()['camera_12_rgb'].copy()
                 imgs.append(img)
                 env.step(act)
             imgs = [Image.fromarray(img) for img in imgs]
             imgs[0].save(f"./{i}.gif", save_all=True, append_images=imgs[1:], duration=100, loop=0)
 
-            stitched_first_imgs.append(imgs[0])
+            stitched_first_imgs.append(imgs[0].copy())
 
             # for camera in agent.env.env.cameras:
             #     os.makedirs(f"./{i}/{camera}", exist_ok=True)
