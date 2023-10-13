@@ -173,8 +173,6 @@ class CustomEmbedding(gym.ObservationWrapper):
 
         self.add_cameras(camera_ids=range(13))
 
-        self.add_cameras(camera_ids=range(13))
-
         if device == 'cuda' and torch.cuda.is_available():
             device = torch.device('cuda')
         else:
