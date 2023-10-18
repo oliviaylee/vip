@@ -200,7 +200,6 @@ class CustomEmbedding(gym.ObservationWrapper):
         self.real_step = True
         self.real_env_state = dict(qpos=self.init_qpos, qvel=self.init_qvel)
         self.add_cameras(camera_ids=range(13))
-        self.add_cameras(camera_ids=range(13))
 
         if device == 'cuda' and torch.cuda.is_available():
             device = torch.device('cuda')
