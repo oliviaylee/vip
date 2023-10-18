@@ -23,6 +23,7 @@ class MPPI(Trajectory):
                  env_kwargs=None
                  ):
         self.env, self.seed = env, seed
+        # self.envs = envs
         self.env_kwargs = env_kwargs
         self.n, self.m = env.observation_dim, env.action_dim
         self.H, self.paths_per_cpu, self.num_cpu = H, paths_per_cpu, num_cpu
@@ -44,6 +45,7 @@ class MPPI(Trajectory):
         self.sol_embedding = [] 
         self.sol_info = [] 
 
+        self.env.real_env_step(True)
         self.env.reset()
         self.env.set_seed(seed)
         self.env.reset(seed=seed)
@@ -100,6 +102,7 @@ class MPPI(Trajectory):
         return scores
 
     def do_rollouts(self, seed):
+        # self.envs
         paths = gather_paths_parallel(self.env,
                                       self.sol_state[-1],
                                       self.act_sequence,

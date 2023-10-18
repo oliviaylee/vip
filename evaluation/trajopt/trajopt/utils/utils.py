@@ -9,6 +9,7 @@ from mjrl.samplers.core import _try_multiprocess
 from trajopt.envs.obs_wrappers import env_constructor
 from trajopt.utils import tensor_utils
 from trajopt.envs.utils import get_environment
+from PIL import Image
 
 def do_env_rollout(env, start_state, act_list, env_kwargs=None):
     """
@@ -21,18 +22,20 @@ def do_env_rollout(env, start_state, act_list, env_kwargs=None):
     # e = copy.deepcopy(env)
     # e = env_constructor(**env_kwargs)
     e.real_env_step(False)
-    e.env.env.reset()
+    e.reset()
     paths = []
     H = act_list[0].shape[0]
     N = len(act_list)
 
     for i in range(N):
+        e.reset()
         e.set_env_state(start_state)
         obs = []
         act = []
         rewards = []
         env_infos = []
         states = []
+        imgs = []
 
         for k in range(H):
             obs.append(e.get_obs())
@@ -41,6 +44,11 @@ def do_env_rollout(env, start_state, act_list, env_kwargs=None):
             states.append(e.get_env_state())
             s, r, d, ifo = e.step(act[-1])
             rewards.append(r)
+            # Save out each video and corresponding reward
+            img = Image.fromarray(e.env.render_extra_views()['camera_12_rgb'])
+            imgs.append(img)
+            # img.save(f"./{e.env.real_step_num}_{i}_{k}_{r}.png")
+        imgs[0].save(f"./{e.env.real_step_num}_{i}_{sum(rewards)}.gif", save_all=True, format='GIF', append_images=imgs[1:], duration=100, loop=0)
 
         path = dict(observations=np.array(obs),
                     actions=np.array(act),
@@ -91,7 +99,7 @@ def generate_paths(env, start_state, N, base_act, filter_coefs,
     paths = do_env_rollout(env, start_state, act_list, env_kwargs)
     return paths
 
-
+# TO-DO: pass in list of envs instead of env (extra arg)
 def gather_paths_parallel(env, start_state, base_act, filter_coefs, base_seed, 
                           paths_per_cpu, num_cpu=None, env_kwargs=None,
                           *args, **kwargs):
@@ -109,7 +117,7 @@ def gather_paths_parallel(env, start_state, base_act, filter_coefs, base_seed,
     for i in range(num_cpu):
         cpu_seed = base_seed + i*paths_per_cpu
         input_dict = dict(env=env, start_state=start_state, N=paths_per_cpu, env_kwargs=env_kwargs,
-                          base_act=base_act, filter_coefs=filter_coefs, base_seed=cpu_seed)
+                          base_act=base_act, filter_coefs=filter_coefs, base_seed=cpu_seed) # envs[i]
         input_dict_list.append(input_dict)
 
     results = _try_multiprocess(func=generate_paths, input_dict_list=input_dict_list,

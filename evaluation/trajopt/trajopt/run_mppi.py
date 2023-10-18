@@ -43,6 +43,9 @@ def configure_jobs(job_data):
         job_data.env = register_env_variant(job_data.env, job_data.env_hyper_params)
 
     # Construct environment 
+
+    # TO-DO: include envs - call env_constructor num_cpu times
+    # num_cpu = 16
     env_kwargs = job_data['env_kwargs']
     env = env_constructor(**env_kwargs)
 
@@ -59,8 +62,8 @@ def configure_jobs(job_data):
         start_time = timer.time()
         print("Currently optimizing trajectory : %i" % i)
         seed = job_data['seed'] + i*12345
-        env.reset(seed=seed)
-        
+        env.reset(seed=seed) # env reset for every env in envs
+
         agent = MPPI(env,
                     H=job_data['plan_horizon'],
                     paths_per_cpu=job_data['paths_per_cpu'],
@@ -71,7 +74,7 @@ def configure_jobs(job_data):
                     filter_coefs=filter_coefs,
                     default_act=job_data['default_act'],
                     seed=seed,
-                    env_kwargs=env_kwargs)
+                    env_kwargs=env_kwargs) # pass in envs
 
         # trajectory optimization
         # distances = {}
@@ -116,18 +119,17 @@ def configure_jobs(job_data):
             # Save trajectory video: step through each action in agent.act_sequence, save out that image, write out the video
             env.real_env_step(False)
             env.reset()
-            reset_img = env.env.render_extra_views()['camera_12_rgb'].copy()
-            Image.fromarray(reset_img).save('reset_img.png')
-            env.set_env_state(agent.sol_state[-1])
-            imgs = []
+            env.set_env_state(agent.sol_state[-2])
+            imgs, cumulative_rew = [], 0
+            # TO-DO: Calculate metrics
             for act in agent.act_sequence:
                 img = env.env.render_extra_views()['camera_12_rgb'].copy()
                 imgs.append(img)
-                Image.fromarray(reset_img).save(f"./{i}_init.png")
-                input()
-                env.step(act)
+                state, reward, done, info = env.step(act)
+                cumulative_rew += reward
+            Image.fromarray(imgs[0]).save(f"./{i}_init.png")
             imgs = [Image.fromarray(img) for img in imgs]
-            imgs[0].save(f"./{i}_plan.gif", save_all=True, append_images=imgs[1:], duration=100, loop=0)
+            imgs[0].save(f"./{i}_plan_{cumulative_rew}.gif", save_all=True, append_images=imgs[1:], duration=100, loop=0)
 
             actual_trajectory.append(imgs[0].copy())
 
@@ -142,9 +144,10 @@ def configure_jobs(job_data):
             #         img = frames[t2]
             #         result = Image.fromarray((img).astype(np.uint8))
             #         result.save(f"./{i}/{camera}/{t2}.png")
-
+        
+        actual_rew = np.sum(agent.sol_reward)
         actual_trajectory[0].save(
-            f"./actual_traj.gif",
+            f"./actual_traj_{actual_rew}.gif",
             save_all=True,
             append_images=actual_trajectory[1:],
             duration=100,
@@ -155,7 +158,7 @@ def configure_jobs(job_data):
         # pickle.dump(agent, open(SAVE_FILE, 'wb'))
         
         end_time = timer.time()
-        print("Trajectory reward = %f" % np.sum(agent.sol_reward))
+        print("Trajectory reward = %f" % actual_rew)
         print("Optimization time for this trajectory = %f" % (end_time - start_time))
         # trajectories.append(agent)
         # pickle.dump(trajectories, open(PICKLE_FILE, 'wb'))
