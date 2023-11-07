@@ -43,11 +43,20 @@ def configure_jobs(job_data):
         job_data.env = register_env_variant(job_data.env, job_data.env_hyper_params)
 
     # Construct environment 
-
-    # TO-DO: include envs - call env_constructor num_cpu times
-    # num_cpu = 16
+    demo0 = '/iris/u/oliviayl/repos/affordance-learning/d5rl/datasets/standard_kitchen/kitchen_demos_multitask_lexa_view_and_wrist_npz/kitchen_demos_multitask_npz/friday_kettle_bottomknob_switch_slide/20230528T010656-1be74c034d6940f1a2d9e63d24fc7f83-218.npz'
+    demo1 = '/iris/u/oliviayl/repos/affordance-learning/d5rl/datasets/standard_kitchen/kitchen_demos_multitask_lexa_view_and_wrist_npz/kitchen_demos_multitask_npz/friday_kettle_switch_hinge_slide/20230528T011924-3c028631c2ed4843ab817c0e011443d7-218.npz'
+    demo2 = '/iris/u/oliviayl/repos/affordance-learning/d5rl/datasets/standard_kitchen/kitchen_demos_multitask_lexa_view_and_wrist_npz/kitchen_demos_multitask_npz/friday_microwave_bottomknob_hinge_slide/20230528T020316-0f04a151a19248efa3548473221e7553-243.npz'
+    demo3 = '/iris/u/oliviayl/repos/affordance-learning/d5rl/datasets/standard_kitchen/kitchen_demos_multitask_lexa_view_and_wrist_npz/kitchen_demos_multitask_npz/friday_microwave_bottomknob_switch_slide/20230528T021912-0b87c52551594f0b93f615d1d83d31a7-212.npz'
+    demo4 = '/iris/u/oliviayl/repos/affordance-learning/d5rl/datasets/standard_kitchen/kitchen_demos_multitask_lexa_view_and_wrist_npz/kitchen_demos_multitask_npz/friday_topknob_bottomknob_hinge_slide/20230528T022647-0bc6fd9c1fad4716bf81a39c5de9f566-240.npz'
+    demo5 = '/iris/u/oliviayl/repos/affordance-learning/d5rl/datasets/standard_kitchen/kitchen_demos_multitask_lexa_view_and_wrist_npz/kitchen_demos_multitask_npz/friday_topknob_bottomknob_switch_slide/20230528T024135-1e3f7a3a772b4f128eccb9a6d91bc7e5-182.npz'
     env_kwargs = job_data['env_kwargs']
-    env = env_constructor(**env_kwargs)
+    env = env_constructor(job_data['H_total'], job_data['plan_horizon'], **env_kwargs)
+
+    # envs = []
+    # for _ in range(job_data['num_cpu']):
+    #     env_kwargs = job_data['env_kwargs']
+    #     env = env_constructor(**env_kwargs)
+    #     envs.append(env)
 
     mean = np.zeros(env.action_dim)
     sigma = 1.0*np.ones(env.action_dim)
@@ -154,15 +163,21 @@ def configure_jobs(job_data):
             loop=0)
 
         # Save trajectory
-        # SAVE_FILE = OUT_DIR + '/traj_%i.pickle' % i
-        # pickle.dump(agent, open(SAVE_FILE, 'wb'))
+        SAVE_FILE = OUT_DIR + '/traj_%i.pickle' % i
+        pickle.dump(agent, open(SAVE_FILE, 'wb'))
         
         end_time = timer.time()
         print("Trajectory reward = %f" % actual_rew)
         print("Optimization time for this trajectory = %f" % (end_time - start_time))
-        # trajectories.append(agent)
-        # pickle.dump(trajectories, open(PICKLE_FILE, 'wb'))
+
+        last_state_distance, robot_distance_per_timestep_loss, kettle_distance_per_timestep_loss = env.env.calculate_metrics(agent.sol_state, agent.sol_info)
+        print("Last state distance = %f" % last_state_distance)
+        print("Sum of L2 losses at each timestep (robot end effector) = %f" % robot_distance_per_timestep_loss)
+        print("Sum of L2 losses at each timestep (kettle) = %f" % kettle_distance_per_timestep_loss)
+
+        trajectories.append(agent)
+        pickle.dump(trajectories, open(PICKLE_FILE, 'wb'))
     
 if __name__ == "__main__":
-    mp.set_start_method('spawn')
+    mp.set_start_method('fork') # 'spawn'
     configure_jobs()

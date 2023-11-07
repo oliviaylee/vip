@@ -22,10 +22,9 @@ class MPPI(Trajectory):
                  seed=123,
                  env_kwargs=None
                  ):
-        self.env, self.seed = env, seed
-        # self.envs = envs
+        self.env, self.seed = env, seed # self.env = env
         self.env_kwargs = env_kwargs
-        self.n, self.m = env.observation_dim, env.action_dim
+        self.n, self.m = self.env.observation_dim, self.env.action_dim
         self.H, self.paths_per_cpu, self.num_cpu = H, paths_per_cpu, num_cpu
         self.warmstart = warmstart
 
@@ -37,7 +36,7 @@ class MPPI(Trajectory):
         if filter_coefs is None:
             self.filter_coefs = [np.ones(self.m), 1.0, 0.0, 0.0]
         self.default_act = default_act
-
+        # TO-DO: MAINTAIN LISTS FOR EACH ENV?
         self.sol_state = []
         self.sol_act = []
         self.sol_reward = []
@@ -45,12 +44,13 @@ class MPPI(Trajectory):
         self.sol_embedding = [] 
         self.sol_info = [] 
 
+        # for env in self.envs: # self.env
         self.env.real_env_step(True)
         self.env.reset()
         self.env.set_seed(seed)
         self.env.reset(seed=seed)
-        self.sol_state.append(self.env.get_env_state()) # .copy()
-        self.sol_obs.append(self.env.get_obs())
+        self.sol_state.append(env.get_env_state()) # .copy()
+        self.sol_obs.append(env.get_obs())
         self.act_sequence = np.ones((self.H, self.m)) * self.mean
         self.init_act_sequence = self.act_sequence.copy()
 
@@ -102,7 +102,6 @@ class MPPI(Trajectory):
         return scores
 
     def do_rollouts(self, seed):
-        # self.envs
         paths = gather_paths_parallel(self.env,
                                       self.sol_state[-1],
                                       self.act_sequence,
